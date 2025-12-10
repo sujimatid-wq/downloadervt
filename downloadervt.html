@@ -1,0 +1,165 @@
+<!doctype html>
+<html lang="id">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>TikTok Video Downloader — Simple TikWM Client</title>
+<style>
+body{font-family:Arial,Helvetica,sans-serif;background:#f7f9fc;padding:20px;color:#1e293b}
+.container{max-width:700px;margin:auto;background:#fff;padding:20px;border-radius:12px;box-shadow:0 4px 16px rgba(0,0,0,.08)}
+input{width:100%;padding:12px;border-radius:8px;border:1px solid #cbd5e1;font-size:15px}
+button{padding:12px 16px;border:none;border-radius:8px;color:#fff;font-weight:600;cursor:pointer;margin-top:10px}
+#fetchBtn{background:#2563eb}
+#downloadBtn{background:#10b981;display:none}
+#clearBtn{background:#94a3b8;margin-left:8px}
+.label{margin-top:12px;font-size:14px;color:#475569}
+pre{background:#f1f5f9;padding:14px;border-radius:8px;white-space:pre-wrap;max-height:300px;overflow:auto;font-size:13px}
+small{color:#64748b}
+</style>
+</head>
+<body>
+
+<div class="container">
+<h2>TikTok Downloader (TikWM)</h2>
+<p>Masukkan URL video TikTok, lalu klik Ambil Link. Setelah berhasil, klik Download Video untuk mengunduh otomatis.</p>
+
+<input id="url" placeholder="Paste URL TikTok disini..." />
+
+<button id="fetchBtn">Ambil Link</button>
+<button id="downloadBtn">Download Video</button>
+<button id="clearBtn">Bersihkan</button>
+
+<div id="status" style="margin-top:12px;font-weight:bold;"></div>
+
+<div id="result" style="display:none;margin-top:20px">
+  <div class="label">Informasi Video:</div>
+  <div id="title"></div>
+  <div id="author" style="color:#64748b;font-size:14px"></div>
+
+  <div class="label" style="margin-top:12px">Detail Response:</div>
+  <pre id="raw"></pre>
+</div>
+
+</div>
+
+<script>
+const $ = id => document.getElementById(id);
+
+const urlInput = $('url');
+const fetchBtn = $('fetchBtn');
+const downloadBtn = $('downloadBtn');
+const clearBtn = $('clearBtn');
+const statusEl = $('status');
+const resultEl = $('result');
+const titleEl = $('title');
+const authorEl = $('author');
+const rawEl = $('raw');
+
+let bestDownloadUrl = null;  // satu-satunya link yang digunakan
+
+function setStatus(msg, error=false){
+  statusEl.textContent = msg;
+  statusEl.style.color = error ? '#b91c1c' : '#334155';
+}
+
+function sanitizeFilename(name){
+  return name.replace(/[<>:"/\\|?*\x00-\x1F]/g, "_").slice(0,100);
+}
+
+function isTikTokUrl(text){
+  try {
+    return /tiktok\.com|vm\.tiktok\.com/.test(new URL(text).hostname);
+  } catch { return false; }
+}
+
+async function fetchTikwm(url){
+  resultEl.style.display = 'none';
+  downloadBtn.style.display = 'none';
+  bestDownloadUrl = null;
+
+  const api = "https://www.tikwm.com/api/?url=" + encodeURIComponent(url);
+  setStatus("Mengambil data dari TikWM...");
+
+  try {
+    const resp = await fetch(api);
+    if (!resp.ok) throw new Error("HTTP " + resp.status);
+
+    const json = await resp.json();
+    const d = json.data;
+
+    if (!d) throw new Error("Response kosong atau tidak valid.");
+
+    // pilih link terbaik
+    bestDownloadUrl = d.hdplay || d.play || d.wmplay || null;
+
+    titleEl.textContent = d.title || "-";
+    authorEl.textContent = d.author || "";
+    rawEl.textContent = JSON.stringify(json, null, 2);
+
+    resultEl.style.display = "block";
+
+    if (bestDownloadUrl) {
+      downloadBtn.style.display = "inline-block";
+      setStatus("Data ditemukan. Klik Download Video.");
+    } else {
+      setStatus("Tidak menemukan link video.", true);
+    }
+
+  } catch (err) {
+    console.error(err);
+    setStatus("Gagal mengambil data: " + err.message, true);
+  }
+}
+
+async function downloadVideo(){
+  if (!bestDownloadUrl) {
+    return setStatus("Tidak ada link video yang bisa diunduh.", true);
+  }
+
+  setStatus("Mengunduh video...");
+
+  try {
+    const resp = await fetch(bestDownloadUrl);
+    if (!resp.ok) throw new Error("HTTP " + resp.status);
+
+    const blob = await resp.blob();
+    const ext = blob.type.includes("mp4") ? ".mp4" : ".bin";
+    const filename = sanitizeFilename(titleEl.textContent || "video") + ext;
+
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+
+    setStatus("Unduhan selesai.");
+  } catch (err) {
+    console.error(err);
+    setStatus("Fetch diblokir (CORS). Membuka link di tab baru...", true);
+    window.open(bestDownloadUrl, "_blank");
+  }
+}
+
+// event handlers
+fetchBtn.onclick = () => {
+  const u = urlInput.value.trim();
+  if (!u) return setStatus("URL belum diisi.", true);
+  if (!isTikTokUrl(u)) return setStatus("Ini bukan URL TikTok yang valid.", true);
+
+  fetchTikwm(u);
+};
+
+downloadBtn.onclick = downloadVideo;
+
+clearBtn.onclick = () => {
+  urlInput.value = "";
+  resultEl.style.display = "none";
+  downloadBtn.style.display = "none";
+  setStatus("");
+};
+
+</script>
+
+</body>
+</html>
